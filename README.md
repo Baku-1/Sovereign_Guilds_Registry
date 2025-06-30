@@ -18,7 +18,7 @@ Soulbound Membership Passports: The contract acts as its own ERC-721 collection,
 
 On-Chain Roles & History: Manages a complete on-chain ledger of members and their roles (Guild Master, Officer, Member). Promotions, departures, and leadership transfers are all recorded as permanent on-chain events, creating a "living history" for the guild.
 
-Decentralized Staking Pool: Includes a built-in staking mechanism where members can stake a designated token (e.g., $NXS) to earn rewards, allowing them to invest directly in their guild's success.
+Decentralized Staking Pool: Includes a built-in staking mechanism where members can stake a designated token (e.g., $Ron, $AXS) to earn rewards, allowing them to invest directly in their guild's success.
 
 Hardened Security: The contract has been designed with security as a priority, incorporating:
 
