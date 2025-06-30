@@ -416,3 +416,56 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         return proposals[proposalId].approvals[user];
     }
 }
+
+    // ===================================================================================
+    // CONTRACT API SUMMARY
+    // ===================================================================================
+    //
+    // --- VIEW FUNCTIONS (Read-Only, No Gas Cost for Callers) ---
+    //
+    // function name() public view returns (string) - Returns the guild's name.
+    // function symbol() public view returns (string) - Returns the symbol for the passport NFTs.
+    // function logoURI() public view returns (string) - Returns URI for the guild's logo.
+    // function bannerURI() public view returns (string) - Returns URI for the guild's banner.
+    // function hasRole(bytes32 role, address account) public view returns (bool) - Checks if user has a role.
+    // function memberToPassportId(address user) public view returns (uint256) - Returns NFT ID of user's passport.
+    // function isPassportActive(uint256 tokenId) public view returns (bool) - Checks if a passport is active or revoked.
+    // function proposals(uint256 proposalId) public view returns (Proposal) - Gets details of a specific proposal.
+    // function approvalThreshold() public view returns (uint256) - Number of signatures needed for withdrawals.
+    // function banned(address user) public view returns (bool) - Checks if a user is banned.
+    //
+    // --- Staking View Functions ---
+    // function earned(address account) public view returns (uint256) - Checks pending staking rewards.
+    // function stakedBalances(address user) public view returns (uint256) - User's staked balance.
+    // function totalStaked() public view returns (uint256) - Total amount staked in the guild.
+    //
+    // --- TRANSACTIONAL FUNCTIONS (State-Changing, Cost Gas) ---
+    //
+    // --- Leadership & Membership ---
+    // function transferLeadership(address newLeader) public - Transfers ownership to an officer. (Admin only)
+    // function renounceOfficer() public - Allows an officer to step down. (Officer only)
+    // function addMember(address user) public - Adds a new member. (Master only)
+    // function removeMember(address user) public - Removes a member, revokes passport. (Master only)
+    // function banMember(address user) public - Permanently bans a member. (Master only)
+    // function leaveGuild() public - Allows a member to leave voluntarily. (Member only)
+    // function promoteToOfficer(address member) public - Promotes a member to officer. (Master only)
+    //
+    // --- Treasury & Visuals ---
+    // function createWithdrawalProposal(address to, uint256 amount, address token, string memory desc) public - Creates withdrawal proposal. (Officer only)
+    // function approveProposal(uint256 proposalId) public - Approves a proposal. (Officer only)
+    // function executeProposal(uint256 proposalId) public - Executes a fully approved proposal. (Member only)
+    // function setApprovalThreshold(uint256 newThreshold) public - Changes number of required signatures. (Master only)
+    // function setLogoURI(string memory _newLogoURI) public - Updates guild logo. (Master only)
+    // function setBannerURI(string memory _newBannerURI) public - Updates guild banner. (Master only)
+    //
+    // --- Staking & Rewards ---
+    // function notifyRewardAmount(uint256 reward, uint256 duration) public - Funds a new staking reward period. (Master only)
+    // function claimReward() public - Claims pending staking rewards.
+    // function stake(uint256 amount) public - Stakes tokens.
+    // function unstake(uint256 amount) public - Unstakes tokens and claims rewards.
+    // function emergencyWithdraw() public - Withdraws stake immediately, forfeiting rewards.
+    //
+    // --- Pausable Controls ---
+    // function pause() public - Pauses critical contract functions. (Pauser only)
+    // function unpause() public - Unpauses the contract. (Pauser only)
+}
