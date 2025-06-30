@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Registry :: On-Chain Guild Authority</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        :root {
+            --primary-color: #00aaff;
+            --secondary-color: #00f0ff;
+            --background-color: #020617;
+            --surface-color: #0f172a;
+            --border-color: #334155;
+            --text-color: #e2e8f0;
+            --text-secondary-color: #94a3b8;
+            --danger-color: #f43f5e;
+            --success-color: #4ade80;
+            --font-primary: 'Orbitron', sans-serif;
+            --font-secondary: 'Roboto', sans-serif;
+        }
+
+        body {
+            font-family: var(--font-secondary);
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .header h1 {
+            font-family: var(--font-primary);
+            font-weight: 900;
+            font-size: 2.5em;
+            color: var(--primary-color);
+            text-shadow: 0 0 15px var(--primary-color);
+            margin: 0;
+        }
+        .header p {
+            color: var(--text-secondary-color);
+            font-size: 1.1em;
+            margin-top: 8px;
+        }
+
+        .panel {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .panel h2, .panel h3 {
+            font-family: var(--font-primary);
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+            margin-top: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-secondary-color);
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--background-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-color);
+            box-sizing: border-box;
+            font-size: 1em;
+        }
+        .form-group small {
+            display: block;
+            margin-top: 6px;
+            color: var(--text-secondary-color);
+            font-size: 0.85em;
+        }
+
+        .btn {
+            background-color: var(--primary-color);
+            color: #ffffff;
+            border: 1px solid var(--primary-color);
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            font-size: 1em;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 0 8px rgba(0, 170, 255, 0.5);
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 0 15px var(--primary-color);
+        }
+        .btn:disabled {
+            background-color: var(--border-color);
+            cursor: not-allowed;
+            opacity: 0.5;
+            box-shadow: none;
+            border-color: var(--border-color);
+        }
+        .btn-success { background-color: var(--success-color); border-color: var(--success-color); box-shadow: 0 0 8px var(--success-color); }
+        .btn-danger { background-color: var(--danger-color); border-color: var(--danger-color); box-shadow: 0 0 8px var(--danger-color); }
+        .btn-warning { background-color: #f59e0b; border-color: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+
+
+        #guild-management-dashboard { display: none; }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+        }
+        .info-card {
+            background-color: rgba(0,0,0,0.2);
+            padding: 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+        .info-card h3 { font-size: 1.2em; }
+        .address-display {
+            font-family: monospace;
+            background: var(--background-color);
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            word-wrap: break-word;
+        }
+        
+        .toast {
+            position: fixed;
+            top: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--surface-color);
+            color: var(--text-color);
+            padding: 16px 24px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--primary-color);
+            z-index: 1000;
+            font-size: 1em;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            transition: top 0.5s ease-in-out, opacity 0.5s ease-in-out;
+            opacity: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .toast.show { top: 24px; opacity: 1; }
+        .toast.success { border-left-color: var(--success-color); }
+        .toast.error { border-left-color: var(--danger-color); }
+        
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>Nexus Registry</h1>
+            <p>Forge your Sovereign Guild Identity on the blockchain.</p>
+        </div>
+
+        <div class="panel" id="creation-panel">
+            <h2><i data-lucide="shield"></i> Deploy New Guild Contract</h2>
+            <p style="color: var(--text-secondary-color);">This action will deploy a new, unique smart contract for your guild. You will need to pay a one-time gas fee in RON to immortalize your guild on the blockchain.</p>
+            <form id="create-guild-form">
+                <div class="form-group">
+                    <label for="guild-name">Guild Name</label>
+                    <input type="text" id="guild-name" placeholder="e.g., Cyber Dragons" required>
+                </div>
+                <div class="form-group">
+                    <label for="guild-symbol">Guild Symbol</label>
+                    <input type="text" id="guild-symbol" placeholder="e.g., CYD" required>
+                </div>
+                <div class="form-group">
+                    <label for="guild-master">Guild Master Address</label>
+                    <input type="text" id="guild-master" placeholder="The Ronin address of the initial guild leader." required>
+                </div>
+                <button type="submit" class="btn"><i data-lucide="hexagon"></i> Deploy Guild</button>
+            </form>
+        </div>
+
+        <div class="panel" id="guild-management-dashboard">
+            <h2 id="dashboard-title"></h2>
+            
+            <div class="dashboard-grid">
+                <div>
+                    <div class="info-card" style="margin-bottom: 24px;">
+                        <h3><i data-lucide="info"></i> Guild Info</h3>
+                        <div class="form-group">
+                            <label>Guild Contract Address</label>
+                            <div id="guild-address" class="address-display"></div>
+                        </div>
+                         <div class="form-group">
+                            <label>Treasury Vault Address</label>
+                            <div id="vault-address" class="address-display">Not Deployed</div>
+                        </div>
+                    </div>
+                    
+                    <div class="info-card">
+                        <h3><i data-lucide="coins"></i> Staking & Rewards</h3>
+                        <div style="text-align:center; padding: 10px; background-color:var(--background-color); border-radius: 6px; margin-bottom: 16px;">
+                            <p style="margin:0; color:var(--text-secondary-color);">Your Staked Balance</p>
+                            <p style="margin:0; font-size: 1.8em; font-family:var(--font-primary); color:var(--secondary-color);">1,250.00 $NXS</p>
+                        </div>
+                        <form id="stake-form" style="display:flex; gap:10px; margin-bottom:10px;">
+                             <input type="number" placeholder="Amount to stake" style="flex-grow:1; margin-bottom:0;" required>
+                             <button type="submit" class="btn"><i data-lucide="plus"></i> Stake</button>
+                        </form>
+                         <form id="unstake-form" style="display:flex; gap:10px;">
+                             <input type="number" placeholder="Amount to unstake" style="flex-grow:1; margin-bottom:0;" required>
+                             <button type="submit" class="btn btn-warning" style="background-color: transparent; border-color: var(--warning-color); color:var(--warning-color);"> Unstake</button>
+                        </form>
+                        <hr style="border-color: var(--border-color); margin: 20px 0;">
+                        <div style="display:flex; justify-content: space-around; gap:10px;">
+                             <button id="claim-reward-btn" class="btn btn-success" style="flex-grow:1;"><i data-lucide="gift"></i> Claim Rewards</button>
+                             <button id="emergency-withdraw-btn" class="btn btn-danger" style="flex-grow:1;"><i data-lucide="siren"></i> Emergency Withdraw</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <div class="info-card" style="margin-bottom: 24px;">
+                        <h3><i data-lucide="shield-check"></i> Treasury Vault</h3>
+                        <p class="text-secondary-color" style="font-size:0.9em;">Deploy a Gnosis Safe multi-signature wallet to secure your guild's assets.</p>
+                        <form id="deploy-vault-form">
+                            <div class="form-group"><label>Signer Addresses (comma-separated)</label><input type="text" id="vault-owners" placeholder="0x..., 0x..." required></div>
+                            <div class="form-group"><label>Signature Threshold</label><input type="number" id="vault-threshold" placeholder="e.g., 2" required></div>
+                            <button type="submit" class="btn btn-success"><i data-lucide="shield-check"></i> Deploy Vault</button>
+                        </form>
+                    </div>
+                    
+                    <div class="info-card">
+                        <h3><i data-lucide="swords"></i> Admin Actions</h3>
+                        <form id="transfer-leadership-form" style="margin-bottom:16px;">
+                            <div class="form-group"><label>Transfer Leadership</label><input type="text" id="new-leader-address" placeholder="New master's address (must be officer)" required></div>
+                            <button type="submit" class="btn btn-danger"><i data-lucide="crown"></i> Transfer</button>
+                        </form>
+                         <form id="ban-member-form" style="margin-bottom:16px;">
+                            <div class="form-group"><label>Ban Member</label><input type="text" id="ban-address" placeholder="Member's address to ban" required></div>
+                            <button type="submit" class="btn btn-danger"><i data-lucide="hammer"></i> Ban</button>
+                        </form>
+                        <div style="display:flex; justify-content:space-between; gap:10px;">
+                            <button id="pause-btn" class="btn btn-warning"><i data-lucide="pause-circle"></i> Pause Staking</button>
+                            <button id="unpause-btn" class="btn btn-success"><i data-lucide="play-circle"></i> Unpause Staking</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast-container"></div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        lucide.createIcons();
+        
+        // --- DOM Elements ---
+        const creationPanel = document.getElementById('creation-panel');
+        const dashboardPanel = document.getElementById('guild-management-dashboard');
+        const createGuildForm = document.getElementById('create-guild-form');
+        
+        let guildContractAddress = null;
+
+        // --- Toast Notification Function ---
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            let icon = type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info';
+            toast.innerHTML = `<i data-lucide="${icon}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+            lucide.createIcons();
+            setTimeout(() => toast.classList.add('show'), 100);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 500);
+            }, 4000);
+        }
+
+        // --- Event Listener for Guild Creation ---
+        createGuildForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const guildName = document.getElementById('guild-name').value;
+            showToast(`Deploying "${guildName}"... This may take a moment.`, 'info');
+            
+            // --- ETHERS.JS INTEGRATION POINT ---
+            // In a real dApp, you would call your GuildFactory contract here.
+            await new Promise(res => setTimeout(res, 2000)); // Simulate transaction delay
+            
+            guildContractAddress = `0x` + [...Array(40)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
+            
+            creationPanel.style.display = 'none';
+            dashboardPanel.style.display = 'block';
+            document.getElementById('dashboard-title').innerText = `Management Dashboard: ${guildName}`;
+            document.getElementById('guild-address').innerText = guildContractAddress;
+            showToast('Sovereign Guild ID Created Successfully!', 'success');
+        });
+
+        // --- Dashboard Form Handlers ---
+        const dashboardForms = ['deploy-vault-form', 'transfer-leadership-form', 'ban-member-form', 'stake-form', 'unstake-form'];
+        dashboardForms.forEach(formId => {
+            document.getElementById(formId).addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const form = e.target;
+                const actionText = form.querySelector('button[type="submit"]').innerText;
+                
+                showToast(`Submitting "${actionText}" transaction...`, 'info');
+                 // --- ETHERS.JS INTEGRATION POINT ---
+                // Here you would get the form data and call the corresponding function on the guildContract.
+                await new Promise(res => setTimeout(res, 1500));
+                
+                showToast(`Action "${actionText}" confirmed successfully!`, 'success');
+                form.reset();
+            });
+        });
+        
+        // --- Dashboard Button Handlers ---
+        const dashboardButtons = ['claim-reward-btn', 'emergency-withdraw-btn', 'pause-btn', 'unpause-btn'];
+         dashboardButtons.forEach(btnId => {
+            document.getElementById(btnId).addEventListener('click', async (e) => {
+                const btn = e.target.closest('button');
+                const actionText = btn.innerText;
+                
+                showToast(`Submitting "${actionText}" transaction...`, 'info');
+                // --- ETHERS.JS INTEGRATION POINT ---
+                await new Promise(res => setTimeout(res, 1500));
+                
+                showToast(`Action "${actionText}" confirmed successfully!`, 'success');
+            });
+        });
+    });
+</script>
+
+</body>
+</html>
