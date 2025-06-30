@@ -5,41 +5,21 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-
-// --- INTERFACES FOR EXTERNAL GNOSIS SAFE CONTRACTS ---
-interface IGnosisSafeProxyFactory {
-    function createProxyWithNonce(
-        address singleton,
-        bytes memory data,
-        uint256 salt
-    ) external returns (address);
-}
-
-interface IGnosisSafe {
-    function setup(
-        address[] calldata _owners,
-        uint256 _threshold,
-        address to,
-        bytes calldata data,
-        address fallbackHandler,
-        address paymentToken,
-        uint256 payment,
-        address payable paymentReceiver
-    ) external;
-}
-
 
 /**
  * @title Guild
  * @dev The ultimate on-chain entity for a Web3 guild, designed for the NexusLabs ecosystem.
  * @author NexusLabs Assistant
- * @notice This production-ready version has been hardened based on a formal audit,
- * incorporating pausable functionality, officer self-demotion, and other security enhancements.
+ * @notice This production-ready version features a fully integrated, on-chain multi-signature
+ * treasury, pausable functionality, a permanent ban list, and other security enhancements.
  */
 contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Pausable {
+    using SafeERC20 for IERC20;
+
     // =============================================
     // SECTION: STATE & CONFIGURATION
     // =============================================
@@ -50,24 +30,37 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     enum PassportStatus { Inactive, Active, Revoked }
+    
+    struct Proposal {
+        uint256 id;
+        address proposer;
+        address to;
+        uint256 amount;
+        address tokenContract; // address(0) for native currency
+        string description;
+        uint256 deadline;
+        bool executed;
+        bool cancelled;
+        mapping(address => bool) approvals;
+        uint256 approvalCount;
+    }
 
+    uint256 public approvalThreshold;
+    uint256 public nextProposalId;
+    mapping(uint256 => Proposal) public proposals;
+
+    mapping(address => bool) public banned;
     string public logoURI;
     string public bannerURI;
-    address public treasuryVault;
     uint256 private _nextTokenId;
     mapping(address => uint256) public memberToPassportId;
     mapping(uint256 => PassportStatus) public passportStatuses;
 
-    IGnosisSafeProxyFactory public immutable gnosisProxyFactory;
-    address public immutable gnosisSafeSingleton;
-
-    // --- Staking Pool State ---
     IERC20 public immutable stakingToken;
     IERC20 public immutable rewardToken;
     mapping(address => uint256) public stakedBalances;
     uint256 public totalStaked;
     
-    // --- Finite Staking Rewards State ---
     uint256 public rewardRate;
     uint256 public periodFinish;
     uint256 public lastUpdateTime;
@@ -80,7 +73,12 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
     
     // --- Events ---
     event LeadershipTransferred(address indexed previousLeader, address indexed newLeader);
-    event TreasuryVaultDeployed(address indexed vaultAddress);
+    event ApprovalThresholdUpdated(uint256 newThreshold);
+    event ProposalCreated(uint256 indexed proposalId, address indexed proposer, string description, uint256 deadline);
+    event ProposalApproved(uint256 indexed proposalId, address indexed approver);
+    event ProposalExecuted(uint256 indexed proposalId);
+    event ProposalCancelled(uint256 indexed proposalId);
+    event MemberBanned(address indexed user);
     event LogoUpdated(string newLogoURI);
     event BannerUpdated(string newBannerURI);
     event GovernanceActivated();
@@ -102,26 +100,28 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         address initialGuildMaster,
         address _stakingTokenAddress,
         address _rewardTokenAddress,
-        address _proxyFactoryAddress,
-        address _singletonAddress
+        uint256 _initialApprovalThreshold
     ) ERC721(name, symbol) {
         _grantRole(DEFAULT_ADMIN_ROLE, initialGuildMaster);
         _grantRole(GUILD_MASTER_ROLE, initialGuildMaster);
+        _grantRole(OFFICER_ROLE, initialGuildMaster);
         _grantRole(PAUSER_ROLE, initialGuildMaster);
         
+        require(_initialApprovalThreshold > 0, "Threshold must be positive");
+        approvalThreshold = _initialApprovalThreshold;
         stakingToken = IERC20(_stakingTokenAddress);
         rewardToken = IERC20(_rewardTokenAddress);
-        gnosisProxyFactory = IGnosisSafeProxyFactory(_proxyFactoryAddress);
-        gnosisSafeSingleton = _singletonAddress;
         
         _addMember(initialGuildMaster);
     }
+    
+    receive() external payable {}
 
     // =============================================
     // SECTION: LEADERSHIP & MEMBERSHIP
     // =============================================
 
-    function transferLeadership(address newLeader) public {
+    function transferLeadership(address newLeader) public whenNotPaused {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Only the current leader can transfer ownership.");
         require(hasRole(OFFICER_ROLE, newLeader), "New leader must be an existing officer.");
         
@@ -136,7 +136,8 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         emit LeadershipTransferred(oldLeader, newLeader);
     }
 
-    function addMember(address user) public onlyRole(GUILD_MASTER_ROLE) {
+    function addMember(address user) public whenNotPaused onlyRole(GUILD_MASTER_ROLE) {
+        require(!banned[user], "Address is banned from this guild.");
         _addMember(user);
     }
     
@@ -155,28 +156,36 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         emit MemberAdded(user);
         emit PassportMinted(user, tokenId);
     }
+    
+    function banMember(address user) public whenNotPaused onlyRole(GUILD_MASTER_ROLE) {
+        require(hasRole(MEMBER_ROLE, user), "User is not a member");
+        banned[user] = true;
+        _revokeAndRemove(user);
+        emit MemberBanned(user);
+    }
 
-    function removeMember(address user) public onlyRole(GUILD_MASTER_ROLE) {
+    function removeMember(address user) public whenNotPaused onlyRole(GUILD_MASTER_ROLE) {
         require(hasRole(MEMBER_ROLE, user), "User is not a member");
         _revokeAndRemove(user);
     }
 
-    function leaveGuild() public onlyRole(MEMBER_ROLE) {
+    function leaveGuild() public whenNotPaused onlyRole(MEMBER_ROLE) {
         _revokeAndRemove(msg.sender);
         emit GuildLeft(msg.sender);
     }
 
     function renounceOfficer() public {
         require(hasRole(OFFICER_ROLE, msg.sender), "Not an officer");
+        require(!hasRole(GUILD_MASTER_ROLE, msg.sender), "Guild Master cannot renounce officer role.");
         _revokeRole(OFFICER_ROLE, msg.sender);
     }
     
     function _revokeAndRemove(address user) internal {
         uint256 tokenId = memberToPassportId[user];
-        
         if (passportStatuses[tokenId] != PassportStatus.Revoked) {
             passportStatuses[tokenId] = PassportStatus.Revoked;
             emit PassportRevoked(tokenId, user);
+            _burn(tokenId);
         }
 
         _revokeRole(MEMBER_ROLE, user);
@@ -186,43 +195,88 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         emit MemberRemoved(user);
     }
 
-    function promoteToOfficer(address member) public onlyRole(GUILD_MASTER_ROLE) {
+    function promoteToOfficer(address member) public whenNotPaused onlyRole(GUILD_MASTER_ROLE) {
         require(hasRole(MEMBER_ROLE, member), "User is not a member.");
         _grantRole(OFFICER_ROLE, member);
     }
 
     // =============================================
-    // SECTION: EMERGENCY & PAUSABLE CONTROLS
+    // SECTION: TREASURY & GOVERNANCE
     // =============================================
+    
+    function createWithdrawalProposal(
+        address to,
+        uint256 amount,
+        address tokenContract,
+        string memory description,
+        uint256 duration
+    ) public whenNotPaused onlyRole(OFFICER_ROLE) returns (uint256) {
+        require(to != address(0), "Cannot send to the zero address");
+        require(amount > 0, "Amount must be greater than zero");
+        require(duration > 0, "Duration must be positive");
 
-    function pause() public onlyRole(PAUSER_ROLE) {
-        _pause();
-    }
-
-    function unpause() public onlyRole(PAUSER_ROLE) {
-        _unpause();
-    }
-
-    // =============================================
-    // SECTION: TREASURY, VISUALS, & PASSPORTS
-    // =============================================
-
-    function deployTreasuryVault(address[] calldata owners, uint256 threshold) public onlyRole(GUILD_MASTER_ROLE) {
-        require(treasuryVault == address(0), "Treasury vault already deployed");
-        require(owners.length >= threshold, "Threshold cannot exceed owner count");
-
-        bytes memory setupData = abi.encodeWithSelector(
-            IGnosisSafe.setup.selector, owners, threshold, address(0),
-            bytes(""), address(0), address(0), 0, address(0)
-        );
+        uint256 proposalId = nextProposalId++;
+        uint256 deadline = block.timestamp + duration;
         
-        uint256 salt = uint256(keccak256(abi.encodePacked(address(this))));
-        address newVaultAddress = gnosisProxyFactory.createProxyWithNonce(gnosisSafeSingleton, setupData, salt);
-
-        treasuryVault = newVaultAddress;
-        emit TreasuryVaultDeployed(newVaultAddress);
+        Proposal storage newProposal = proposals[proposalId];
+        newProposal.id = proposalId;
+        newProposal.proposer = msg.sender;
+        newProposal.to = to;
+        newProposal.amount = amount;
+        newProposal.tokenContract = tokenContract;
+        newProposal.description = description;
+        newProposal.deadline = deadline;
+        
+        emit ProposalCreated(proposalId, msg.sender, description, deadline);
+        return proposalId;
+    }
+    
+    function approveProposal(uint256 proposalId) public whenNotPaused onlyRole(OFFICER_ROLE) {
+        Proposal storage proposal = proposals[proposalId];
+        require(!proposal.executed, "Already executed");
+        require(!proposal.cancelled, "Cancelled");
+        require(block.timestamp < proposal.deadline, "Expired");
+        require(!proposal.approvals[msg.sender], "Already approved");
+        proposal.approvals[msg.sender] = true;
+        proposal.approvalCount++;
+        emit ProposalApproved(proposalId, msg.sender);
     }
 
+    function executeProposal(uint256 proposalId) public whenNotPaused onlyRole(OFFICER_ROLE) nonReentrant {
+        Proposal storage proposal = proposals[proposalId];
+        require(!proposal.executed, "Proposal already executed");
+        require(!proposal.cancelled, "Proposal was cancelled");
+        require(block.timestamp < proposal.deadline, "Proposal has expired");
+        require(proposal.approvalCount >= approvalThreshold, "Not enough approvals");
+
+        proposal.executed = true;
+
+        if (proposal.tokenContract == address(0)) {
+            require(address(this).balance >= proposal.amount, "Insufficient native currency");
+            (bool success, ) = proposal.to.call{value: proposal.amount}("");
+            require(success, "Native currency transfer failed");
+        } else {
+            IERC20(proposal.tokenContract).safeTransfer(proposal.to, proposal.amount);
+        }
+
+        emit ProposalExecuted(proposalId);
+    }
+    
+    function cancelProposal(uint256 proposalId) public whenNotPaused onlyRole(OFFICER_ROLE) {
+        Proposal storage proposal = proposals[proposalId];
+        require(!proposal.executed, "Proposal already executed");
+        require(!proposal.cancelled, "Proposal already cancelled");
+        
+        proposal.cancelled = true;
+        emit ProposalCancelled(proposalId);
+    }
+    
+    function setApprovalThreshold(uint256 newThreshold) public onlyRole(GUILD_MASTER_ROLE) {
+        require(newThreshold > 0, "Threshold must be greater than zero");
+        approvalThreshold = newThreshold;
+        emit ApprovalThresholdUpdated(newThreshold);
+    }
+    
     function setLogoURI(string memory _newLogoURI) public onlyRole(GUILD_MASTER_ROLE) {
         logoURI = _newLogoURI;
         emit LogoUpdated(_newLogoURI);
@@ -232,14 +286,13 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         bannerURI = _newBannerURI;
         emit BannerUpdated(_newBannerURI);
     }
-    
-    function setTokenURI(uint256 tokenId, string memory _tokenURI) public onlyRole(GUILD_MASTER_ROLE) {
-        _setTokenURI(tokenId, _tokenURI);
-    }
 
     // =============================================
-    // SECTION: STAKING & REWARDS
+    // SECTION: PAUSABLE & STAKING
     // =============================================
+
+    function pause() public onlyRole(PAUSER_ROLE) { _pause(); }
+    function unpause() public onlyRole(PAUSER_ROLE) { _unpause(); }
 
     modifier updateReward(address account) {
         rewardPerTokenStored = rewardPerToken();
@@ -266,7 +319,7 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         return a < b ? a : b;
     }
 
-    function notifyRewardAmount(uint256 reward, uint256 duration) public onlyRole(GUILD_MASTER_ROLE) updateReward(address(0)) {
+    function notifyRewardAmount(uint256 reward, uint256 duration) public whenNotPaused onlyRole(GUILD_MASTER_ROLE) updateReward(address(0)) {
         require(reward > 0 && duration > 0, "Invalid reward/duration");
         if (block.timestamp >= periodFinish) {
             rewardRate = reward / duration;
@@ -285,10 +338,9 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         if (reward > 0) {
             uint256 availableRewards = rewardToken.balanceOf(address(this));
             uint256 amountToPay = min(reward, availableRewards);
-
             if (amountToPay > 0) {
-                rewards[msg.sender] -= amountToPay; 
-                rewardToken.transfer(msg.sender, amountToPay);
+                rewards[msg.sender] -= amountToPay;
+                rewardToken.safeTransfer(msg.sender, amountToPay);
                 emit RewardPaid(msg.sender, amountToPay);
             }
         }
@@ -298,50 +350,29 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         require(amount > 0, "Cannot stake zero");
         totalStaked += amount;
         stakedBalances[msg.sender] += amount;
-        require(stakingToken.transferFrom(msg.sender, address(this), amount), "Token transfer failed");
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
         emit Staked(msg.sender, amount);
     }
     
     function unstake(uint256 amount) public nonReentrant whenNotPaused updateReward(msg.sender) {
         require(amount > 0, "Cannot unstake zero");
         require(stakedBalances[msg.sender] >= amount, "Insufficient staked balance");
-        
         claimReward();
-
         totalStaked -= amount;
         stakedBalances[msg.sender] -= amount;
-        require(stakingToken.transfer(msg.sender, amount), "Token transfer failed");
+        stakingToken.safeTransfer(msg.sender, amount);
         emit Unstaked(msg.sender, amount);
     }
     
     function emergencyWithdraw() public nonReentrant {
         uint256 balance = stakedBalances[msg.sender];
-        require(balance > 0, "No staked balance to withdraw");
-        
+        require(balance > 0, "No staked balance");
         stakedBalances[msg.sender] = 0;
         totalStaked -= balance;
-        
         rewards[msg.sender] = 0;
         userRewardPerTokenPaid[msg.sender] = rewardPerToken();
-
-        require(stakingToken.transfer(msg.sender, balance), "Token transfer failed");
+        stakingToken.safeTransfer(msg.sender, balance);
         emit EmergencyWithdraw(msg.sender, balance);
-    }
-
-    // =============================================
-    // SECTION: GOVERNANCE & DIPLOMACY
-    // =============================================
-
-    function activateGovernance() public onlyRole(GUILD_MASTER_ROLE) {
-        require(!governanceActive, "Governance is already active");
-        governanceActive = true;
-        emit GovernanceActivated();
-    }
-    
-    function proposeAlliance(address otherGuild) public onlyRole(GUILD_MASTER_ROLE) {
-        require(allianceStatus[otherGuild] == 0, "Interaction already exists");
-        allianceStatus[otherGuild] = 1;
-        emit AllianceProposed(otherGuild);
     }
 
     // =============================================
@@ -352,6 +383,11 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         return passportStatuses[tokenId] == PassportStatus.Active;
     }
     
+    function _beforeTokenTransfer(address from, address to, uint256 firstTokenId, uint256 batchSize) internal virtual override {
+        require(from == address(0) || to == address(0), "Guild Passport is non-transferable (Soulbound)");
+        super._beforeTokenTransfer(from, to, firstTokenId, batchSize);
+    }
+
     function approve(address, uint256) public virtual override {
         require(false, "Guild Passport is non-transferable");
     }
@@ -364,8 +400,7 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
         return super._update(to, tokenId, auth);
     }
 
-    function _transfer(address from, address to, uint256 tokenId) internal virtual override {
-        require(from == address(0), "Guild Passport is non-transferable (Soulbound)");
+    function _transfer(address from, address to, uint256 tokenId) internal virtual override(ERC721, ERC721URIStorage) {
         super._transfer(from, to, tokenId);
     }
     
@@ -376,53 +411,8 @@ contract Guild is ERC721, ERC721URIStorage, AccessControl, ReentrancyGuard, Paus
     function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, ERC721URIStorage, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
-    
-    // ===================================================================================
-    // CONTRACT API SUMMARY
-    // ===================================================================================
-    //
-    // --- VIEW FUNCTIONS (Read-Only, No Gas Cost for Callers) ---
-    //
-    // function name() public view returns (string)
-    // function symbol() public view returns (string)
-    // function logoURI() public view returns (string)
-    // function bannerURI() public view returns (string)
-    // function treasuryVault() public view returns (address)
-    // function hasRole(bytes32 role, address account) public view returns (bool)
-    // function memberToPassportId(address user) public view returns (uint256)
-    // function isPassportActive(uint256 tokenId) public view returns (bool)
-    // function earned(address account) public view returns (uint256)
-    // function stakedBalances(address user) public view returns (uint256)
-    // function totalStaked() public view returns (uint256)
-    // function governanceActive() public view returns (bool)
-    // function allianceStatus(address otherGuild) public view returns (uint8)
 
-    // --- TRANSACTIONAL FUNCTIONS (State-Changing, Cost Gas) ---
-    //
-    // --- Leadership & Membership ---
-    // function transferLeadership(address newLeader) public
-    // function renounceOfficer() public
-    // function addMember(address user) public
-    // function removeMember(address user) public
-    // function leaveGuild() public
-    // function promoteToOfficer(address member) public
-    //
-    // --- Treasury, Visuals, Passports ---
-    // function deployTreasuryVault(address[] calldata owners, uint256 threshold) public
-    // function setLogoURI(string memory _newLogoURI) public
-    // function setBannerURI(string memory _newBannerURI) public
-    // function setTokenURI(uint256 tokenId, string memory _tokenURI) public
-    //
-    // --- Staking, Governance, & Diplomacy ---
-    // function notifyRewardAmount(uint256 reward, uint256 duration) public
-    // function claimReward() public
-    // function stake(uint256 amount) public
-    // function unstake(uint256 amount) public
-    // function emergencyWithdraw() public
-    // function activateGovernance() public
-    // function proposeAlliance(address otherGuild) public
-    //
-    // --- Pausable Controls ---
-    // function pause() public
-    // function unpause() public
+    function hasApproved(uint256 proposalId, address user) external view returns (bool) {
+        return proposals[proposalId].approvals[user];
+    }
 }
