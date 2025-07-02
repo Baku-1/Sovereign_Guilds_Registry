@@ -12,7 +12,7 @@ The Guild.sol smart contract is the heart of the system, providing each register
 
 Sovereign Identity: Each guild becomes a unique smart contract with its own permanent address on the blockchain, serving as its undeniable identity.
 
-Secure Treasury Vault: The ability to deploy an official Gnosis Safe multi-signature wallet, ensuring that guild funds are controlled collectively by its leadership, not by a single individual.
+Secure Treasury Vault: The Contract Acts As a multi-signature wallet, ensuring that guild funds are controlled collectively by its leadership, not by a single individual.
 
 Soulbound Membership Passports: The contract acts as its own ERC-721 collection, minting non-transferable (soulbound) NFT "passports" to members. This creates a verifiable and tamper-proof record of membership and status.
 
