@@ -1,25 +1,42 @@
 <!DOCTYPE html>
+<!-- 
+================================================================================
+  FILE: nexus_hub.html
+  PROJECT: Nexus Hub - The Unified Ecosystem dApp
+  DESCRIPTION: 
+  This file serves as the central user interface for the NexusLabs ecosystem.
+  It now includes an integrated modal for viewing the full activity history.
+================================================================================
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus Hub :: Your Sovereign Identity</title>
+    <title>Nexus Hub :: Your Sovereign Profile</title>
+    
+    <!-- PWA Manifest and Theme Color -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#020617">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js" type="application/javascript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <style>
         :root {
             --primary-color: #00aaff;
             --secondary-color: #00f0ff;
             --background-color: #020617;
-            --surface-color: #0f172a;
+            --background-color-rgb: 2, 6, 23;
+            --surface-color-rgb: 15, 23, 42;
             --border-color: #334155;
+            --border-color-rgb: 51, 65, 85;
             --text-color: #e2e8f0;
             --text-secondary-color: #94a3b8;
-            --danger-color: #f43f5e;
-            --success-color: #4ade80;
+            --gold-color: #ffd700;
             --font-primary: 'Orbitron', sans-serif;
             --font-secondary: 'Roboto', sans-serif;
         }
@@ -29,47 +46,68 @@
             background-color: var(--background-color);
             color: var(--text-color);
             margin: 0;
-            padding: 24px;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
             box-sizing: border-box;
+            overflow-x: hidden;
         }
 
-        .container {
+        #bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
-            max-width: 900px;
+            height: 100%;
+            z-index: -1;
+        }
+
+        /* --- Sidebar Styles --- */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 80px;
+            background-color: rgba(var(--surface-color-rgb), 0.75);
+            -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(8px);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 24px;
+            z-index: 300;
+        }
+        .sidebar-logo .nav-link:hover {
+            background-color: transparent;
+            border-color: transparent;
+        }
+        .sidebar-nav { display: flex; flex-direction: column; gap: 16px; margin-top: 32px; }
+        .nav-item { position: relative; }
+        .nav-link { display: flex; justify-content: center; align-items: center; width: 48px; height: 48px; border-radius: 8px; color: var(--text-secondary-color); transition: all 0.2s; border: 1px solid transparent; }
+        .nav-link:hover, .nav-link.active { background-color: rgba(0, 170, 255, 0.1); color: var(--primary-color); border-color: var(--primary-color); }
+        .tooltip { position: absolute; left: 90px; background-color: var(--background-color); padding: 6px 12px; border-radius: 6px; font-size: 0.9em; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.2s; pointer-events: none; border: 1px solid var(--border-color); }
+        .nav-item:hover .tooltip { visibility: visible; opacity: 1; }
+
+        /* --- Main Content & Layout --- */
+        .main-content {
+            margin-left: 80px;
+            padding: 24px 80px 24px 40px;
+            max-width: 1240px;
+            transition: margin-right 0.4s ease-in-out; 
         }
         
-        .header {
-            text-align: center;
-            margin-bottom: 32px;
-        }
-        .header h1 {
-            font-family: var(--font-primary);
-            font-weight: 900;
-            font-size: 2.5em;
-            color: var(--primary-color);
-            text-shadow: 0 0 15px var(--primary-color);
-            margin: 0;
-        }
-        .header p {
-            color: var(--text-secondary-color);
-            font-size: 1.1em;
-            margin-top: 8px;
-        }
-
         .panel {
-            background-color: var(--surface-color);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
+            background-color: rgba(var(--surface-color-rgb), 0.6);
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(var(--border-color-rgb), 0.5);
+            border-radius: 12px;
             padding: 24px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             margin-bottom: 24px;
+            position: relative;
         }
         
-        .panel h2 {
+        .panel h2, .panel h3, .panel h4 {
             font-family: var(--font-primary);
             color: var(--primary-color);
             border-bottom: 1px solid var(--border-color);
@@ -80,221 +118,741 @@
             gap: 12px;
         }
         
-        .form-group {
-            margin-bottom: 20px;
+        .dashboard-layout {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            align-items: flex-start;
         }
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
+        @media (max-width: 1024px) {
+            .dashboard-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* --- Profile & Stats Styles --- */
+        .profile-header { display: flex; align-items: center; gap: 24px; margin-bottom: 24px; flex-wrap: wrap;}
+        .profile-avatar-wrapper { position: relative; cursor: pointer; }
+        .profile-avatar { width: 120px; height: 120px; border-radius: 50%; border: 3px solid var(--primary-color); padding: 4px; background-color: var(--background-color); }
+        .profile-avatar-wrapper .edit-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.6); color: white; display: flex; justify-content: center; align-items: center; border-radius: 50%; opacity: 0; transition: opacity 0.3s; }
+        .profile-avatar-wrapper:hover .edit-overlay { opacity: 1; }
+        
+        .profile-info h1 { font-family: var(--font-primary); margin: 0; font-size: 2.2em; display: inline-block; }
+        .profile-info .edit-name-btn { background: none; border: none; color: var(--text-secondary-color); cursor: pointer; opacity: 0; transition: opacity 0.3s; vertical-align: middle; margin-left: 8px;}
+        .profile-info:hover .edit-name-btn { opacity: 1; }
+        .profile-info .edit-name-btn:hover { color: var(--primary-color); }
+
+        .profile-info p { margin: 4px 0 0 0; color: var(--text-secondary-color); font-family: monospace; word-break: break-all; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 16px; text-align: center; }
+        .stat-card { 
+            background-color: rgba(var(--surface-color-rgb), 0.4); 
+            border: 1px solid rgba(var(--border-color-rgb), 0.2);
+            padding: 16px; 
+            border-radius: 8px; 
+            transition: all 0.3s ease; 
+        }
+        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 5px 20px rgba(0, 170, 255, 0.2); background-color: rgba(var(--surface-color-rgb), 0.6); }
+        .stat-value { font-family: var(--font-primary); font-size: 1.8em; color: var(--secondary-color); }
+        .stat-label { font-size: 0.9em; color: var(--text-secondary-color); }
+        
+        /* --- Performance Matrix & Trophy Case Styles --- */
+        .performance-card {
+            background-color: rgba(var(--surface-color-rgb), 0.4);
+            border: 1px solid rgba(var(--border-color-rgb), 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 24px;
+        }
+        .performance-card h4 {
+            font-family: var(--font-primary);
+            color: var(--secondary-color);
+            margin: 0 0 12px 0;
+            font-size: 1.2em;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .performance-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(var(--border-color-rgb), 0.2);
+        }
+        .performance-stat:last-child {
+            border-bottom: none;
+        }
+        .performance-stat-label {
             color: var(--text-secondary-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .form-group input {
-            width: 100%;
-            padding: 12px;
-            background-color: var(--background-color);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            color: var(--text-color);
-            box-sizing: border-box;
-            font-size: 1em;
+        .performance-stat-value {
+            font-weight: 600;
+            font-family: var(--font-primary);
         }
 
-        .btn {
-            background-color: var(--primary-color);
-            color: #ffffff;
-            border: 1px solid var(--primary-color);
+        .trophy-case { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 16px; }
+        .trophy-card { 
+            background-color: var(--background-color); 
+            border: 1px solid var(--border-color);
+            border-radius: 8px; 
+            padding: 16px; 
+            text-align: center; 
+            transition: all 0.3s ease; 
+        }
+        .trophy-card:hover { 
+            transform: translateY(-5px); 
+            box-shadow: 0 5px 20px rgba(255, 215, 0, 0.2); 
+            border-color: var(--gold-color); 
+        }
+        .trophy-icon { color: var(--gold-color); margin-bottom: 8px; }
+        .trophy-name { font-weight: 600; font-size: 0.9em; }
+
+
+        /* --- Activity Feed --- */
+        .activity-feed { max-height: 400px; overflow-y: auto; }
+        .activity-feed::-webkit-scrollbar { width: 4px; }
+        .activity-feed::-webkit-scrollbar-track { background: transparent; }
+        .activity-feed::-webkit-scrollbar-thumb { background-color: var(--border-color); border-radius: 20px; }
+        .activity-item { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+        .activity-item:last-child { border-bottom: none; }
+        .activity-icon { color: var(--primary-color); }
+        .activity-text { 
+            flex-grow: 1; 
+            min-width: 0; 
+        }
+        .activity-text span { color: var(--secondary-color); font-weight: 600; }
+        .activity-time { font-size: 0.8em; color: var(--text-secondary-color); white-space: nowrap; }
+        .panel-corner-action { position: absolute; top: 24px; right: 24px; color: var(--text-secondary-color); background: none; border: none; cursor: pointer; padding: 0;}
+        .panel-corner-action:hover { color: var(--primary-color); }
+
+        /* --- Flyout Navigation & Panels --- */
+        .flyout-nav-container { position: fixed; top: 24px; right: 0; display: flex; flex-direction: column; gap: 10px; z-index: 250; }
+        .flyout-nav-btn { background: rgba(var(--surface-color-rgb), 0.75); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); border: 1px solid var(--border-color); border-right: none; color: var(--text-secondary-color); cursor: pointer; transition: all 0.2s ease; height: 60px; width: 70px; display: flex; justify-content: center; align-items: center; padding-left: 10px; clip-path: polygon(25% 0, 100% 0, 100% 100%, 25% 100%, 0 50%); position: relative; }
+        .flyout-nav-btn:hover { color: var(--primary-color); transform: translateX(-5px); border-color: var(--primary-color); }
+        .flyout-nav-btn.active { background: var(--primary-color); color: white; transform: translateX(-10px); border-color: var(--primary-color); }
+        .flyout-panel { 
+            position: fixed; 
+            top: 0; 
+            right: 0; 
+            height: 100vh; 
+            width: 450px; 
+            max-width: calc(100vw - 80px); 
+            background-color: rgba(var(--surface-color-rgb), 0.75);
+            -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(8px);
+            border-left: 1px solid var(--border-color); 
+            padding: 24px; 
+            overflow-y: auto; 
+            box-shadow: -10px 0 30px rgba(0,0,0,0.5); 
+            z-index: 200; 
+            transform: translateX(100%); 
+            transition: transform 0.4s ease-in-out; 
+        }
+        .flyout-panel.is-open { transform: translateX(0); }
+        .flyout-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .flyout-close-btn { background: none; border: none; color: var(--text-secondary-color); cursor: pointer; }
+        .flyout-close-btn:hover { color: var(--primary-color); }
+        
+        /* Content Styles for Flyout Panels */
+        .data-list-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background-color: rgba(var(--surface-color-rgb), 0.4); border: 1px solid rgba(var(--border-color-rgb), 0.2); border-radius: 6px; margin-bottom: 12px; }
+        .data-list-info { display: flex; align-items: center; gap: 16px; }
+        .data-list-info img { width: 40px; height: 40px; border-radius: 50%; }
+        .data-list-name { font-weight: 600; }
+        .data-list-subtext { font-size: 0.9em; color: var(--text-secondary-color); }
+        .data-list-rank { font-family: var(--font-primary); font-size: 1.2em; color: var(--primary-color); width: 40px; text-align: center; }
+        .portfolio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
+        .asset-card { background-color: rgba(var(--surface-color-rgb), 0.4); border: 1px solid rgba(var(--border-color-rgb), 0.2); padding: 16px; border-radius: 8px; text-align: center; }
+        .asset-card img { width: 80px; height: 80px; border-radius: 8px; margin-bottom: 8px; }
+
+        /* Sub-tab styles for leaderboards */
+        .sub-tab-nav { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; flex-wrap: wrap; }
+        .sub-tab-btn { background: none; border: none; padding: 8px 12px; color: var(--text-secondary-color); cursor: pointer; border-radius: 6px; font-weight: 600; transition: all 0.2s; }
+        .sub-tab-btn:hover { background-color: rgba(var(--surface-color-rgb), 0.5); color: var(--text-color); }
+        .sub-tab-btn.active { background-color: var(--primary-color); color: white; }
+        .sub-tab-content { display: none; }
+        .sub-tab-content.active { display: block; }
+
+        /* --- Modal Styles --- */
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(var(--background-color-rgb), 0.8); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); z-index: 400; display: flex; justify-content: center; align-items: center; opacity: 0; visibility: hidden; transition: opacity 0.3s; }
+        .modal-backdrop.is-open { opacity: 1; visibility: visible; }
+        .modal-content { background-color: rgba(var(--surface-color-rgb), 0.75); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border: 1px solid var(--border-color); padding: 24px; border-radius: 8px; width: 90%; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .modal-content.modal-lg { max-width: 800px; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .modal-header h3 { margin: 0; font-family: var(--font-primary); color: var(--primary-color); }
+        .modal-close-btn { background: none; border: none; color: var(--text-secondary-color); cursor: pointer; }
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; margin-bottom: 8px; color: var(--text-secondary-color); }
+        .form-input { width: 100%; background-color: var(--background-color); border: 1px solid var(--border-color); color: var(--text-color); padding: 10px; border-radius: 6px; }
+        .form-input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 10px rgba(0,170,255,0.3); }
+        .modal-actions { text-align: right; margin-top: 24px; }
+        .btn-primary { background-color: var(--primary-color); color: white; padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; }
+        .btn-secondary { background-color: transparent; color: var(--text-secondary-color); padding: 10px 20px; border-radius: 6px; border: 1px solid var(--border-color); cursor: pointer; margin-right: 8px; }
+
+        /* --- Activity Log Modal Styles --- */
+        .filters { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+        .filter-group { display: flex; flex-direction: column; }
+        .filter-label { font-size: 0.9em; color: var(--text-secondary-color); margin-bottom: 8px; }
+        .filter-select { background-color: rgba(var(--surface-color-rgb), 0.8); border: 1px solid var(--border-color); color: var(--text-color); padding: 8px 12px; border-radius: 6px; font-family: var(--font-secondary); }
+        .filter-select:focus { outline: none; border-color: var(--primary-color); }
+        .activity-log { min-height: 400px; }
+        .activity-log .activity-item { padding: 12px; border-bottom: 1px solid rgba(var(--border-color-rgb), 0.5); transition: background-color 0.2s; }
+        .activity-log .activity-item:hover { background-color: rgba(var(--surface-color-rgb), 0.3); }
+        .activity-source { font-size: 0.8em; font-weight: 600; color: var(--primary-color); background-color: rgba(var(--primary-color), 0.1); padding: 2px 8px; border-radius: 4px; margin-left: auto; white-space: nowrap; }
+        .pagination { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 24px; }
+        .pagination-btn { background-color: rgba(var(--surface-color-rgb), 0.8); border: 1px solid var(--border-color); color: var(--text-color); padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+        .pagination-btn:hover:not(:disabled) { background-color: var(--primary-color); color: white; }
+        .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .page-info { color: var(--text-secondary-color); }
+
+        /* --- Custom Claim Button Style --- */
+        .btn-claim {
+            background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+            color: white;
             padding: 12px 24px;
-            border-radius: 6px;
+            border-radius: 8px;
+            border: none;
             cursor: pointer;
-            font-weight: 600;
-            transition: all 0.2s;
-            font-size: 1em;
+            font-family: var(--font-primary);
+            font-size: 1.1em;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 170, 255, 0.4);
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            box-shadow: 0 0 8px rgba(0, 170, 255, 0.5);
         }
-        .btn:hover:not(:disabled) {
+        .btn-claim:hover {
             transform: translateY(-2px);
-            box-shadow: 0 0 15px var(--primary-color);
+            box-shadow: 0 8px 25px rgba(0, 170, 255, 0.6);
         }
-        .btn:disabled {
-            background-color: var(--border-color);
-            cursor: not-allowed;
-            opacity: 0.5;
-            box-shadow: none;
-            border-color: var(--border-color);
-        }
-        
-        .modal-backdrop {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            display: none; justify-content: center; align-items: center;
-            z-index: 1000; opacity: 0; transition: opacity 0.3s;
-        }
-        .modal-backdrop.visible { display: flex; opacity: 1; }
-        .modal-content {
-            background-color: var(--surface-color); padding: 24px;
-            border-radius: 8px; border: 1px solid var(--primary-color);
-            width: 90%; max-width: 500px; box-shadow: 0 0 20px rgba(0, 170, 255, 0.5);
-        }
-        .modal-actions { margin-top: 24px; display: flex; justify-content: flex-end; gap: 16px; }
 
-        .toast {
-            position: fixed; top: -100px; left: 50%; transform: translateX(-50%);
-            background-color: var(--surface-color); color: var(--text-color);
-            padding: 16px 24px; border-radius: 8px; border: 1px solid var(--border-color);
-            border-left: 4px solid var(--primary-color); z-index: 2000;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3); transition: all 0.5s ease-in-out;
-            opacity: 0; display: flex; align-items: center; gap: 12px;
-        }
-        .toast.show { top: 24px; opacity: 1; }
-        .toast.success { border-left-color: var(--success-color); }
-        .toast.error { border-left-color: var(--danger-color); }
-        
     </style>
 </head>
 <body>
+    <canvas id="bg-canvas"></canvas>
 
-    <div class="container">
-        <div class="header">
-            <h1>Nexus Hub</h1>
-            <p>Your Sovereign Identity in the NexusLabs Ecosystem.</p>
+    <!-- Sidebar Navigation -->
+    <div class="sidebar">
+        <div class="sidebar-logo">
+            <a href="#" class="nav-link">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="NexusLabs Logo">
+                    <defs>
+                        <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="var(--secondary-color)"/>
+                            <stop offset="100%" stop-color="var(--primary-color)"/>
+                        </linearGradient>
+                    </defs>
+                    <path d="M6 22V6L22 22V6" stroke="url(#logo-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-item"><a href="#" class="nav-link active"><i data-lucide="home"></i></a><span class="tooltip">Nexus Hub</span></div>
+            <div class="nav-item"><a href="#" class="nav-link"><i data-lucide="users"></i></a><span class="tooltip">GuildHQ</span></div>
+            <div class="nav-item"><a href="#" class="nav-link"><i data-lucide="book-open-check"></i></a><span class="tooltip">KollectaDex</span></div>
+            <div class="nav-item"><a href="#" class="nav-link"><i data-lucide="store"></i></a><span class="tooltip">NeoTrades</span></div>
+            <div class="nav-item"><a href="#" class="nav-link"><i data-lucide="repeat"></i></a><span class="tooltip">The King's Dex</span></div>
+            <div class="nav-item"><a href="#" class="nav-link"><i data-lucide="swords"></i></a><span class="tooltip">Cyber Battlefield</span></div>
+            <div class="nav-item"><a href="#" class="nav-link"><i data-lucide="hammer"></i></a><span class="tooltip">The Kingdom's Forge</span></div>
+            <div class="nav-item"><a href="#" class="nav-link"><i data-lucide="clapperboard"></i></a><span class="tooltip">Klipping Studio</span></div>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        
+        <!-- Claim ID Panel -->
+        <div id="claim-id-panel">
+            <div class="panel" style="text-align: center;">
+                <h2><i data-lucide="user-plus"></i> Claim Your Sovereign Identity</h2>
+                <p style="color: var(--text-secondary-color); max-width: 600px; margin: 16px auto 24px auto;">Your Nexus ID is your permanent, private, soulbound token that serves as your unified identity across all NexusLabs applications. Claim yours now to begin your journey.</p>
+                <button id="claim-id-btn" class="btn-claim"><i data-lucide="award"></i> Claim Your Nexus ID</button>
+            </div>
         </div>
 
-        <div class="panel" id="claim-id-panel">
-            <h2><i data-lucide="user-plus"></i> Claim Your Nexus ID</h2>
-            <p style="color: var(--text-secondary-color);">Your Nexus ID is your permanent, private, soulbound token that serves as your unified identity across all NexusLabs applications. Claim yours now to begin your journey.</p>
-            <button id="claim-id-btn" class="btn"><i data-lucide="award"></i> Claim Your Nexus ID</button>
-        </div>
-
+        <!-- User Dashboard -->
         <div id="user-dashboard" style="display: none;">
-            <div class="panel" id="nexus-id-panel">
-                <h2><i data-lucide="user-check"></i> My Sovereign ID</h2>
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <img src="https://via.placeholder.com/100?text=NEXUSID" alt="Nexus ID" style="border-radius: 8px;">
-                    <div>
-                        <p style="margin:0; font-size: 1.2em; font-weight: bold;">Nexus ID #1337</p>
-                        <p id="user-wallet-address" style="color:var(--text-secondary-color); font-family: monospace; margin: 4px 0 0 0;"></p>
+            <div class="dashboard-layout">
+                <div class="main-column">
+                    <!-- Main Profile Panel -->
+                    <div class="panel">
+                        <p id="dynamic-greeting" style="color: var(--text-secondary-color); margin-bottom: 24px;">Welcome back, Nexus Citizen.</p>
+                        <div class="profile-header">
+                            <div class="profile-avatar-wrapper" id="edit-pfp-btn">
+                                <img src="https://placehold.co/120x120/0f172a/00f0ff?text=PFP" alt="User Avatar" class="profile-avatar">
+                                <div class="edit-overlay"><i data-lucide="camera"></i></div>
+                            </div>
+                            <div class="profile-info">
+                                <h1><span id="user-name">Baku</span> <button class="edit-name-btn" id="edit-name-btn"><i data-lucide="edit-2"></i></button></h1>
+                                <p id="user-wallet-address">Nexus ID #1337</p>
+                            </div>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-card"><div class="stat-value">720</div><div class="stat-label">Citizen Score</div></div>
+                            <div class="stat-card"><div class="stat-value">1,250</div><div class="stat-label">$NXS Staked</div></div>
+                            <div class="stat-card"><div class="stat-value">3</div><div class="stat-label">Guilds</div></div>
+                            <div class="stat-card"><div class="stat-value">12</div><div class="stat-label">Total Wins</div></div>
+                            <div class="stat-card"><div class="stat-value">4,500</div><div class="stat-label">Total $NXS Earned</div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="side-column">
+                    <div class="panel">
+                        <button id="view-history-btn" class="panel-corner-action" title="View Full History">
+                            <i data-lucide="history"></i>
+                        </button>
+                        <h2><i data-lucide="zap"></i> Nexus Activity Feed</h2>
+                        <div class="activity-feed" id="activity-feed-container">
+                            <!-- Activity items will be dynamically inserted here -->
+                        </div>
+                    </div>
+                    <div class="panel" id="trophy-panel">
+                        <h2><i data-lucide="trophy"></i> Trophy Case</h2>
+                        <div class="trophy-case">
+                            <div class="trophy-card"><i data-lucide="shield-check" class="trophy-icon"></i><div class="trophy-name">Founder's Badge</div></div>
+                            <div class="trophy-card"><i data-lucide="swords" class="trophy-icon"></i><div class="trophy-name">First Blood</div></div>
+                            <div class="trophy-card"><i data-lucide="hammer" class="trophy-icon"></i><div class="trophy-name">Master Forger</div></div>
+                        </div>
                     </div>
                 </div>
             </div>
-            
-            <div class="panel" id="guild-actions-panel">
-                 <h2><i data-lucide="shield"></i> My Guilds</h2>
-                 <p style="color: var(--text-secondary-color);">Manage your existing Sovereign Guilds or found a new one to be immortalized on the blockchain.</p>
-                 <button id="show-guild-creation-btn" class="btn"><i data-lucide="plus-circle"></i> Found a New Sovereign Guild</button>
+        </div>
+    </div>
+
+    <!-- Flyout Navigation & Panels -->
+    <nav class="flyout-nav-container">
+        <button class="flyout-nav-btn" data-target="#guilds-flyout" title="My Guilds"><i data-lucide="users"></i></button>
+        <button class="flyout-nav-btn" data-target="#portfolio-flyout" title="My Portfolio"><i data-lucide="wallet"></i></button>
+        <button class="flyout-nav-btn" data-target="#leaderboards-flyout" title="Game Leaderboards"><i data-lucide="list-ordered"></i></button>
+        <button class="flyout-nav-btn" data-target="#cyber-battlefield-flyout" title="Cyber Battlefield"><i data-lucide="swords"></i></button>
+        <button class="flyout-nav-btn" data-target="#forge-flyout" title="The Kingdom's Forge"><i data-lucide="hammer"></i></button>
+    </nav>
+
+    <!-- Flyout Panels -->
+    <div id="guilds-flyout" class="flyout-panel">
+        <div class="flyout-header"><h3 class="panel-h3"><i data-lucide="users"></i> My Guilds</h3><button class="flyout-close-btn"><i data-lucide="x"></i></button></div>
+        <div class="data-list-item"><div class="data-list-info"><img src="https://placehold.co/40x40/0f172a/4ade80?text=CD" alt="Guild Logo"><div><div class="data-list-name">Cyber Dragons</div><div class="data-list-subtext">Role: Officer</div></div></div></div>
+    </div>
+    <div id="portfolio-flyout" class="flyout-panel">
+        <div class="flyout-header"><h3 class="panel-h3"><i data-lucide="wallet"></i> My Portfolio</h3><button class="flyout-close-btn"><i data-lucide="x"></i></button></div>
+        <div class="portfolio-grid"><div class="asset-card"><img src="https://placehold.co/80x80/0f172a/00aaff?text=NXS" alt="$NXS Logo"><div>1,250 $NXS</div></div><div class="asset-card"><img src="https://placehold.co/80x80/0f172a/00f0ff?text=NFT" alt="Passport NFT"><div>Cyber Dragons Passport</div></div></div>
+    </div>
+    <div id="leaderboards-flyout" class="flyout-panel">
+        <div class="flyout-header"><h3 class="panel-h3"><i data-lucide="list-ordered"></i> Game Leaderboards</h3><button class="flyout-close-btn"><i data-lucide="x"></i></button></div>
+        <nav class="sub-tab-nav">
+            <button class="sub-tab-btn active" data-sub-tab="seraphim">SERAPHIM</button>
+            <button class="sub-tab-btn" data-sub-tab="hack-city">New Hack City</button>
+            <button class="sub-tab-btn" data-sub-tab="rumble">Ronin Rumble</button>
+        </nav>
+        <div class="sub-tab-content active" id="sub-tab-content-seraphim">
+            <div class="data-list-item"><div class="data-list-info"><span class="data-list-rank">1</span><img src="https://placehold.co/40x40/0f172a/ff4d4d?text=S" alt="User Avatar"><div><div class="data-list-name">SeraphHunter</div><div class="data-list-subtext">Kill Count: 2,103,450</div></div></div></div>
+            <div class="performance-card">
+                <h4>My Performance</h4>
+                <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="crosshair"></i> Kill Count</span> <span class="performance-stat-value">2,103,450</span></div>
+                <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="shield-check"></i> Highest Wave</span> <span class="performance-stat-value">25</span></div>
+                <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="heart-pulse"></i> Avg. Stability</span> <span class="performance-stat-value">88%</span></div>
+            </div>
+        </div>
+        <div class="sub-tab-content" id="sub-tab-content-hack-city">
+            <div class="data-list-item"><div class="data-list-info"><span class="data-list-rank">1</span><img src="https://placehold.co/40x40/0f172a/4ade80?text=N" alt="User Avatar"><div><div class="data-list-name">NetRunner_01</div><div class="data-list-subtext">Infiltrations: 55 (vs Avg: 42)</div></div></div></div>
+            <div class="performance-card">
+                <h4>My Performance</h4>
+                <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="server"></i> Infiltrations</span> <span class="performance-stat-value">55</span></div>
+                <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="file-stack"></i> Data Bounties</span> <span class="performance-stat-value">128</span></div>
+                <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="flame"></i> Notoriety</span> <span class="performance-stat-value">Tier 4</span></div>
+            </div>
+        </div>
+        <div class="sub-tab-content" id="sub-tab-content-rumble"><p style="text-align: center; color: var(--text-secondary-color);">Ronin Rumble leaderboards coming soon.</p></div>
+    </div>
+    <div id="cyber-battlefield-flyout" class="flyout-panel">
+        <div class="flyout-header"><h3 class="panel-h3"><i data-lucide="swords"></i> Cyber Battlefield</h3><button class="flyout-close-btn"><i data-lucide="x"></i></button></div>
+        <div class="performance-card" style="margin-top: 0;">
+            <h4>My Performance</h4>
+            <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="swords"></i> W/L Ratio</span> <span class="performance-stat-value">2.75</span></div>
+            <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="trophy"></i> Tourneys Won</span> <span class="performance-stat-value">3</span></div>
+            <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="dollar-sign"></i> Winnings</span> <span class="performance-stat-value">1,800 $NXS</span></div>
+        </div>
+    </div>
+    <div id="forge-flyout" class="flyout-panel">
+        <div class="flyout-header"><h3 class="panel-h3"><i data-lucide="hammer"></i> The Kingdom's Forge</h3><button class="flyout-close-btn"><i data-lucide="x"></i></button></div>
+        <h4 style="color: var(--secondary-color); margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">My Forged Creations</h4>
+        <div class="portfolio-grid" style="margin-top: 16px;"><div class="asset-card"><img src="https://placehold.co/80x80/0f172a/ff69b4?text=KK1" alt="Forged NFT"><div>Cyber Paladin</div></div><div class="asset-card"><img src="https://placehold.co/80x80/0f172a/7b68ee?text=KK2" alt="Forged NFT"><div>Void Wyrm</div></div></div>
+        <div class="performance-card">
+            <h4>My Forge Stats</h4>
+            <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="hammer"></i> NFTs Forged</span> <span class="performance-stat-value">8</span></div>
+            <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="gem"></i> Legendary Forges</span> <span class="performance-stat-value">1</span></div>
+            <div class="performance-stat"><span class="performance-stat-label"><i data-lucide="link"></i> Lineage Bonuses</span> <span class="performance-stat-value">2 Active</span></div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal-backdrop" id="profile-edit-modal">
+        <div class="modal-content">
+            <div class="modal-header"><h3 id="modal-title">Edit Profile</h3><button class="modal-close-btn"><i data-lucide="x"></i></button></div>
+            <div class="modal-body"><div class="form-group" id="edit-name-group"><label for="name-input" class="form-label">Display Name</label><input type="text" id="name-input" class="form-input"></div><div class="form-group" id="edit-pfp-group"><label for="pfp-input" class="form-label">Profile Picture URL</label><input type="url" id="pfp-input" class="form-input" placeholder="https://example.com/image.png"></div></div>
+            <div class="modal-actions"><button class="btn-secondary modal-close-btn">Cancel</button><button class="btn-primary" id="save-profile-btn">Save Changes</button></div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="activity-log-modal">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3><i data-lucide="history"></i> Full Activity History</h3>
+                <button class="modal-close-btn"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="filters">
+                    <div class="filter-group">
+                        <label for="source-filter" class="filter-label">Filter by Source</label>
+                        <select id="source-filter" class="filter-select">
+                            <option value="all">All Sources</option>
+                            <option value="Nexus Hub">Nexus Hub</option>
+                            <option value="Cyber Battlefield">Cyber Battlefield</option>
+                            <option value="The Kingdom's Forge">The Kingdom's Forge</option>
+                            <option value="NeoTrades">NeoTrades</option>
+                            <option value="Project: SERAPHIM">Project: SERAPHIM</option>
+                            <option value="New Hack City">New Hack City</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="type-filter" class="filter-label">Filter by Type</label>
+                        <select id="type-filter" class="filter-select">
+                            <option value="all">All Types</option>
+                            <option value="Achievement">Achievement</option>
+                            <option value="Forge">Forge</option>
+                            <option value="Trade">Trade</option>
+                            <option value="Mission">Mission</option>
+                            <option value="Infiltration">Infiltration</option>
+                            <option value="Guild">Guild</option>
+                            <option value="Profile">Profile</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="activity-log" class="activity-log">
+                    <!-- Activity items will be dynamically inserted here -->
+                </div>
+
+                <div class="pagination">
+                    <button id="prev-page" class="pagination-btn"><i data-lucide="arrow-left"></i></button>
+                    <span id="page-info" class="page-info"></span>
+                    <button id="next-page" class="pagination-btn"><i data-lucide="arrow-right"></i></button>
+                </div>
             </div>
         </div>
     </div>
     
-    <div id="create-guild-modal" class="modal-backdrop">
-        <div class="modal-content">
-            <h3><i data-lucide="shield"></i> Deploy New Guild Contract</h3>
-            <p style="color: var(--text-secondary-color); font-size: 0.9em;">This will deploy a new smart contract for your guild. You will pay a one-time gas fee in RON.</p>
-            <form id="create-guild-form">
-                <div class="form-group"><label for="guild-name">Guild Name</label><input type="text" id="guild-name" required></div>
-                <div class="form-group"><label for="guild-symbol">Guild Symbol</label><input type="text" id="guild-symbol" required></div>
-                <button type="submit" class="btn" style="width: 100%;"><i data-lucide="hexagon"></i> Confirm & Deploy</button>
-            </form>
-        </div>
-    </div>
-    
-    <div id="toast-container"></div>
-
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        lucide.createIcons();
-        
         // --- DOM Elements ---
+        const mainContent = document.querySelector('.main-content');
         const claimIdPanel = document.getElementById('claim-id-panel');
         const userDashboard = document.getElementById('user-dashboard');
         const claimIdBtn = document.getElementById('claim-id-btn');
-        const showGuildCreationBtn = document.getElementById('show-guild-creation-btn');
-        const createGuildModal = document.getElementById('create-guild-modal');
-        const createGuildForm = document.getElementById('create-guild-form');
+        const flyoutNavBtns = document.querySelectorAll('.flyout-nav-btn');
+        const flyoutPanels = document.querySelectorAll('.flyout-panel');
+        const flyoutCloseBtns = document.querySelectorAll('.flyout-close-btn');
         
-        let currentUserAddress = "0xAbc...123"; // This would be set after wallet connection
+        // Profile Edit Modal
+        const profileEditModal = document.getElementById('profile-edit-modal');
+        const editPfpBtn = document.getElementById('edit-pfp-btn');
+        const editNameBtn = document.getElementById('edit-name-btn');
+        const profileModalCloseBtns = profileEditModal.querySelectorAll('.modal-close-btn');
+        const saveProfileBtn = document.getElementById('save-profile-btn');
+        const nameInput = document.getElementById('name-input');
+        const pfpInput = document.getElementById('pfp-input');
+        const userNameEl = document.getElementById('user-name');
+        const profileAvatarImg = document.querySelector('.profile-avatar');
+        const editNameGroup = document.getElementById('edit-name-group');
+        const editPfpGroup = document.getElementById('edit-pfp-group');
         
-        // --- Mock State ---
-        // This simulates whether the connected user already has a Nexus ID.
-        let userHasNexusId = false; 
+        // Activity Feed (Dashboard)
+        const activityFeedContainer = document.getElementById('activity-feed-container');
+        
+        // Activity Log Modal
+        const activityLogModal = document.getElementById('activity-log-modal');
+        const viewHistoryBtn = document.getElementById('view-history-btn');
+        const activityModalCloseBtns = activityLogModal.querySelectorAll('.modal-close-btn');
+        const logContainer = document.getElementById('activity-log');
+        const sourceFilter = document.getElementById('source-filter');
+        const typeFilter = document.getElementById('type-filter');
+        const prevPageBtn = document.getElementById('prev-page');
+        const nextPageBtn = document.getElementById('next-page');
+        const pageInfoEl = document.getElementById('page-info');
 
-        // --- Toast Notification Function ---
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-            let icon = type === 'success' ? 'check-circle' : 'info';
-            toast.innerHTML = `<i data-lucide="${icon}"></i><span>${message}</span>`;
-            container.appendChild(toast);
+        // --- Data ---
+        const fullActivityData = [
+            { icon: 'sword', text: 'Achievement Unlocked: <span>First Blood</span> in Cyber Battlefield.', time: '2h ago', source: 'Cyber Battlefield', type: 'Achievement' },
+            { icon: 'hammer', text: 'Forged a new creation: <span>Cyber Paladin</span>.', time: '8h ago', source: 'The Kingdom\'s Forge', type: 'Forge' },
+            { icon: 'arrow-right-left', text: 'Sold <span>Mystic Axie #1234</span> on NeoTrades.', time: '1d ago', source: 'NeoTrades', type: 'Trade' },
+            { icon: 'shield', text: 'Completed a SERAPHIM mission with 95% Mental Stability.', time: '1d ago', source: 'Project: SERAPHIM', type: 'Mission'},
+            { icon: 'zap', text: 'Successfully infiltrated the <span>Data Fortress</span> in New Hack City.', time: '2d ago', source: 'New Hack City', type: 'Infiltration'},
+            { icon: 'user-plus', text: '<span>Ryu</span> joined your guild, Cyber Dragons.', time: '2d ago', source: 'GuildHQ', type: 'Guild' },
+            { icon: 'award', text: 'Reached a new peak Citizen Score of <span>720</span>.', time: '3d ago', source: 'Nexus Hub', type: 'Profile'},
+            { icon: 'arrow-right-left', text: 'Bought <span>Ronin Blade</span> on NeoTrades for 250 $NXS.', time: '3d ago', source: 'NeoTrades', type: 'Trade' },
+            { icon: 'shield', text: 'Survived 15 waves in a SERAPHIM Anomaly.', time: '4d ago', source: 'Project: SERAPHIM', type: 'Mission'},
+            { icon: 'trophy', text: 'Won the <span>Weekly Skirmish</span> tournament.', time: '5d ago', source: 'Cyber Battlefield', type: 'Achievement' },
+            { icon: 'zap', text: 'Extracted <span>Project Chimera</span> data from a secure server.', time: '5d ago', source: 'New Hack City', type: 'Infiltration' },
+            { icon: 'hammer', text: 'Failed to forge <span>Aegis Shield</span>. Components lost.', time: '6d ago', source: 'The Kingdom\'s Forge', type: 'Forge' },
+            { icon: 'user', text: 'Updated profile name to <span>Baku</span>.', time: '6d ago', source: 'Nexus Hub', type: 'Profile' },
+            { icon: 'shield', text: 'Pilot reached max Mental Stability during a mission.', time: '1w ago', source: 'Project: SERAPHIM', type: 'Achievement' },
+            { icon: 'arrow-right-left', text: 'Listed <span>Forged Sword</span> on NeoTrades.', time: '1w ago', source: 'NeoTrades', type: 'Trade' },
+        ];
+        let currentPage = 1;
+        const itemsPerPage = 7;
+        let filteredData = [...fullActivityData];
+
+        // --- Initialization ---
+        function init() {
+            // Event Listeners
+            if (claimIdBtn) claimIdBtn.addEventListener('click', () => alert("Claim functionality disabled for UI development."));
+            
+            flyoutNavBtns.forEach(button => button.addEventListener('click', () => toggleFlyout(button.dataset.target, button)));
+            flyoutCloseBtns.forEach(button => button.addEventListener('click', e => closeFlyout(e.currentTarget.closest('.flyout-panel'))));
+
+            if(editPfpBtn) editPfpBtn.addEventListener('click', () => openProfileModal('pfp'));
+            if(editNameBtn) editNameBtn.addEventListener('click', () => openProfileModal('name'));
+            profileModalCloseBtns.forEach(btn => btn.addEventListener('click', closeProfileModal));
+            if(saveProfileBtn) saveProfileBtn.addEventListener('click', handleProfileSave);
+            
+            // Activity Log Modal Listeners
+            if(viewHistoryBtn) viewHistoryBtn.addEventListener('click', openActivityLogModal);
+            activityModalCloseBtns.forEach(btn => btn.addEventListener('click', closeActivityLogModal));
+            sourceFilter.addEventListener('change', applyFilters);
+            typeFilter.addEventListener('change', applyFilters);
+            prevPageBtn.addEventListener('click', () => { if (currentPage > 1) { currentPage--; renderLog(); } });
+            nextPageBtn.addEventListener('click', () => { const totalPages = Math.ceil(filteredData.length / itemsPerPage); if (currentPage < totalPages) { currentPage++; renderLog(); } });
+
+
+            initializeLeaderboardTabs();
+            
+            // --- DEVELOPMENT: Force dashboard view ---
+            updateUIForConnectedState("0x1234...abcd"); 
+            loadDashboardData("0x1234...abcd");
+            populateDashboardActivityFeed();
+            init3DBackground();
             lucide.createIcons();
-            setTimeout(() => toast.classList.add('show'), 100);
-            setTimeout(() => {
-                toast.classList.remove('show');
-                setTimeout(() => toast.remove(), 500);
-            }, 4000);
         }
 
-        // --- Main Application Logic ---
-        function initializeApp() {
-            // In a real dApp, you would connect to the wallet and then check the NexusID contract
-            // using `balanceOf(userAddress)` to see if they have an ID.
-            if (userHasNexusId) {
-                claimIdPanel.style.display = 'none';
-                userDashboard.style.display = 'block';
-                document.getElementById('user-wallet-address').innerText = currentUserAddress;
+        // --- 3D Background Logic ---
+        function init3DBackground() {
+            const canvas = document.getElementById('bg-canvas');
+            if (!canvas) return;
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            const starGeo = new THREE.BufferGeometry();
+            const starCount = 5000;
+            const posArray = new Float32Array(starCount * 3);
+            for (let i = 0; i < starCount * 3; i++) {
+                posArray[i] = (Math.random() - 0.5) * 100;
+            }
+            starGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            
+            const starMaterial = new THREE.PointsMaterial({ color: 0x5555ff, size: 0.05 });
+            const starMesh = new THREE.Points(starGeo, starMaterial);
+            scene.add(starMesh);
+
+            camera.position.z = 5;
+
+            const mouse = new THREE.Vector2();
+            window.addEventListener('mousemove', (event) => {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            });
+
+            function animate() {
+                requestAnimationFrame(animate);
+                starMesh.rotation.y += 0.0002;
+                
+                camera.position.x += (mouse.x * 0.5 - camera.position.x) * 0.02;
+                camera.position.y += (mouse.y * 0.5 - camera.position.y) * 0.02;
+                camera.lookAt(scene.position);
+
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // --- UI Logic ---
+        function openProfileModal(mode) {
+            if (mode === 'pfp') {
+                editNameGroup.style.display = 'none';
+                editPfpGroup.style.display = 'block';
+                pfpInput.value = profileAvatarImg.src;
             } else {
-                claimIdPanel.style.display = 'block';
-                userDashboard.style.display = 'none';
+                editNameGroup.style.display = 'block';
+                editPfpGroup.style.display = 'none';
+                nameInput.value = userNameEl.textContent;
+            }
+            profileEditModal.classList.add('is-open');
+        }
+
+        function closeProfileModal() {
+            profileEditModal.classList.remove('is-open');
+        }
+
+        function handleProfileSave() {
+            if (editNameGroup.style.display !== 'none') {
+                const newName = nameInput.value.trim();
+                if (newName) userNameEl.textContent = newName;
+            }
+            if (editPfpGroup.style.display !== 'none') {
+                const newPfpUrl = pfpInput.value.trim();
+                if (newPfpUrl) profileAvatarImg.src = newPfpUrl;
+            }
+            closeProfileModal();
+        }
+
+        function openActivityLogModal() {
+            activityLogModal.classList.add('is-open');
+            applyFilters(); // Render the log when opening
+        }
+
+        function closeActivityLogModal() {
+            activityLogModal.classList.remove('is-open');
+        }
+
+        function toggleFlyout(targetSelector, clickedButton) {
+            const targetPanel = document.querySelector(targetSelector);
+            if (!targetPanel) return;
+            const isAlreadyOpen = targetPanel.classList.contains('is-open');
+            flyoutPanels.forEach(panel => {
+                if(panel !== targetPanel) closeFlyout(panel);
+            });
+            if (isAlreadyOpen) closeFlyout(targetPanel);
+            else openFlyout(targetPanel, clickedButton);
+        }
+
+        function openFlyout(panel, button) {
+            panel.classList.add('is-open');
+            flyoutNavBtns.forEach(btn => btn.classList.remove('active'));
+            if (button) button.classList.add('active');
+            mainContent.style.marginRight = `${panel.offsetWidth}px`;
+        }
+
+        function closeFlyout(panel) {
+            if (!panel) return;
+            panel.classList.remove('is-open');
+            const button = document.querySelector(`.flyout-nav-btn[data-target="#${panel.id}"]`);
+            if (button) button.classList.remove('active');
+            const anyPanelOpen = document.querySelector('.flyout-panel.is-open');
+            if (!anyPanelOpen) mainContent.style.marginRight = '0';
+        }
+
+        function initializeLeaderboardTabs() {
+            const leaderboardPanel = document.getElementById('leaderboards-flyout');
+            if (leaderboardPanel) {
+                const subTabBtns = leaderboardPanel.querySelectorAll('.sub-tab-btn');
+                const subTabContents = leaderboardPanel.querySelectorAll('.sub-tab-content');
+                subTabBtns.forEach(button => {
+                    button.addEventListener('click', () => {
+                        subTabBtns.forEach(btn => btn.classList.remove('active'));
+                        button.classList.add('active');
+                        const subTabId = button.dataset.subTab;
+                        subTabContents.forEach(content => {
+                            content.classList.toggle('active', content.id === `sub-tab-content-${subTabId}`);
+                        });
+                    });
+                });
             }
         }
         
-        // --- Event Handlers ---
-        claimIdBtn.addEventListener('click', async () => {
-            showToast('Please sign the transaction to claim your ID...', 'info');
+        function populateDashboardActivityFeed() {
+            if (!activityFeedContainer) return;
+            activityFeedContainer.innerHTML = '';
+            fullActivityData.slice(0, 5).forEach(item => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'activity-item';
+                itemEl.innerHTML = `
+                    <div class="activity-icon"><i data-lucide="${item.icon}"></i></div>
+                    <div class="activity-text">${item.text}</div>
+                    <div class="activity-time">${item.time}</div>
+                `;
+                activityFeedContainer.appendChild(itemEl);
+            });
+            lucide.createIcons();
+        }
 
-            // --- ETHERS.JS INTEGRATION POINT ---
-            // 1. const nexusIdContract = new ethers.Contract(NEXUS_ID_ADDRESS, NEXUS_ID_ABI, signer);
-            // 2. const tx = await nexusIdContract.mintBadge(currentUserAddress);
-            // 3. await tx.wait();
+        // --- Activity Log Modal Logic ---
+        function renderLog() {
+            logContainer.innerHTML = '';
             
-            await new Promise(res => setTimeout(res, 1500)); // Simulate transaction delay
-            
-            showToast('Nexus ID #1338 Minted Successfully!', 'success');
-            userHasNexusId = true;
-            initializeApp(); // Refresh the UI
-        });
-        
-        showGuildCreationBtn.addEventListener('click', () => {
-            createGuildModal.classList.add('visible');
-        });
-        
-        createGuildForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            showToast('Deploying your Sovereign Guild...', 'info');
-            
-            // --- ETHERS.JS INTEGRATION POINT ---
-            // 1. const factoryContract = new ethers.Contract(GUILD_FACTORY_ADDRESS, FACTORY_ABI, signer);
-            // 2. const tx = await factoryContract.createGuild(...);
-            // 3. await tx.wait();
-
-            await new Promise(res => setTimeout(res, 2000));
-            
-            createGuildModal.classList.remove('visible');
-            showToast('Guild Deployed Successfully!', 'success');
-        });
-
-        // Close modal if backdrop is clicked
-        createGuildModal.addEventListener('click', (e) => {
-            if (e.target === createGuildModal) {
-                createGuildModal.classList.remove('visible');
+            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+            if (totalPages === 0) {
+                 logContainer.innerHTML = `<p style="text-align:center; color: var(--text-secondary-color);">No activities match the current filters.</p>`;
+                 pageInfoEl.textContent = 'Page 1 of 1';
+                 prevPageBtn.disabled = true;
+                 nextPageBtn.disabled = true;
+                 return;
             }
-        });
 
-        // --- Initial Load ---
-        initializeApp();
+            currentPage = Math.max(1, Math.min(currentPage, totalPages));
+
+            const start = (currentPage - 1) * itemsPerPage;
+            const end = start + itemsPerPage;
+            const paginatedItems = filteredData.slice(start, end);
+
+            paginatedItems.forEach(item => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'activity-item';
+                itemEl.innerHTML = `
+                    <div class="activity-icon"><i data-lucide="${item.icon}"></i></div>
+                    <div class="activity-text">${item.text}</div>
+                    <div class="activity-source">${item.source}</div>
+                    <div class="activity-time">${item.time}</div>
+                `;
+                logContainer.appendChild(itemEl);
+            });
+
+            lucide.createIcons();
+            
+            pageInfoEl.textContent = `Page ${currentPage} of ${totalPages}`;
+            prevPageBtn.disabled = currentPage === 1;
+            nextPageBtn.disabled = currentPage === totalPages;
+        }
+
+        function applyFilters() {
+            const source = sourceFilter.value;
+            const type = typeFilter.value;
+
+            filteredData = fullActivityData.filter(item => {
+                const sourceMatch = source === 'all' || item.source === source;
+                const typeMatch = type === 'all' || item.type === type;
+                return sourceMatch && typeMatch;
+            });
+            
+            currentPage = 1;
+            renderLog();
+        }
+
+        // --- Mock/Placeholder Functions ---
+        function loadDashboardData(address) {
+            if(userNameEl) userNameEl.textContent = "Baku";
+            const walletEl = document.getElementById('user-wallet-address');
+            if(walletEl) walletEl.textContent = `Nexus ID: ${truncateAddress(address)}`;
+        }
+
+        function updateUIForConnectedState(address) {
+            if(claimIdPanel) claimIdPanel.style.display = 'none';
+            if(userDashboard) userDashboard.style.display = 'block';
+        }
+        
+        function truncateAddress(address) {
+            if (!address) return '';
+            return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+        }
+
+        init();
     });
 </script>
 
